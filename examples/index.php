@@ -21,6 +21,7 @@ declare(strict_types=1);
 use Dflydev\FigCookies\SetCookie;
 use Lcobucci\JWT\Parser;
 use Lcobucci\JWT\Signer\Hmac\Sha256;
+use Interop\Http\ServerMiddleware\DelegateInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Zend\Diactoros\Response;
 use PSR7Sessions\Storageless\Http\SessionMiddleware;
@@ -50,17 +51,19 @@ $sessionMiddleware = new SessionMiddleware(
     1200, // 20 minutes
     new SystemCurrentTime()
 );
-$myMiddleware = function (ServerRequestInterface $request, ResponseInterface $response) : ResponseInterface {
-    /* @var \PSR7Sessions\Storageless\Session\SessionInterface $session */
-    $session = $request->getAttribute(SessionMiddleware::SESSION_ATTRIBUTE);
-    $session->set('counter', $session->get('counter', 0) + 1);
 
-    $response
-        ->getBody()
-        ->write('Counter Value: ' . $session->get('counter'));
-
-    return $response;
+$delegate = new class implements DelegateInterface
+{
+    public function process(ServerRequestInterface $request): ResponseInterface
+    {
+        /* @var \PSR7Sessions\Storageless\Session\SessionInterface $session */
+        $session = $request->getAttribute(SessionMiddleware::SESSION_ATTRIBUTE);
+        $session->set('counter', $session->get('counter', 0) + 1);
+        $response = new Response();
+        $response->getBody()->write('Counter Value: ' . $session->get('counter'));
+        return $response;
+    }
 };
 
 (new SapiEmitter())
-    ->emit($sessionMiddleware(ServerRequestFactory::fromGlobals(), new Response(), $myMiddleware));
+    ->emit($sessionMiddleware->process(ServerRequestFactory::fromGlobals(), $delegate));
